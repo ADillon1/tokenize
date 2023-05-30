@@ -25,7 +25,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 endif()
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+add_library(tokenize INTERFACE)
+add_library(tokenize::tokenize ALIAS tokenize)
+
+target_include_directories(tokenize INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (BUILD_TESTS)
     FetchContent_Declare(Catch2 
@@ -35,4 +38,5 @@ if (BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
     add_executable(tests ${TEST_SOURCE_DIRECTORY}/main.cpp)
     target_link_libraries(tests Catch2)
+    target_link_libraries(tests tokenize)
 endif()
