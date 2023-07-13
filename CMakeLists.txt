@@ -6,7 +6,7 @@ set(TEST_SOURCE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-option(BUILD_TESTS "Builds tests" OFF)
+option(BUILD_TOKENIZE_TESTS "Builds tests" OFF)
 
 project(tokenize)
 
@@ -30,7 +30,7 @@ add_library(tokenize::tokenize ALIAS tokenize)
 
 target_include_directories(tokenize INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
-if (BUILD_TESTS)
+if (BUILD_TOKENIZE_TESTS)
     FetchContent_Declare(Catch2 
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG v2.x
