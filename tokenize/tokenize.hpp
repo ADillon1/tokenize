@@ -7,9 +7,12 @@
 #include <sstream>
 #include <filesystem>
 #include <memory>
+#include <algorithm>
 #include <tokenize/defines/tokenizer_types.hpp>
 
-struct token_stream_context
+namespace tokenize
+{
+struct stream_context
 {
   std::string m_file_path;
   std::string m_stream;
@@ -19,7 +22,7 @@ struct token_stream_context
 
 struct dfa_state
 {
-  e_token_id m_token_id;
+  token_id m_token_id;
   dfa_state* m_edge[CHAR_MAX];
 };
 
@@ -38,7 +41,7 @@ struct dfa_base
     }
   }
 
-  dfa_state_ptr add_state(e_token_id accepting_token)
+  dfa_state_ptr add_state(token_id accepting_token)
   {
     dfa_state_ptr state = new dfa_state();
     state->m_token_id = accepting_token;
@@ -75,7 +78,7 @@ struct dfa_base
   }
 
   /*! Adds a string keyword to the DFA. */
-  void add_string(dfa_state_ptr from, dfa_state_ptr default_state, e_token_id id, const std::string& word, const std::string accepted)
+  void add_string(dfa_state_ptr from, dfa_state_ptr default_state, token_id id, const std::string& word, const std::string accepted)
   {
     for (char character : word)
     {
@@ -89,7 +92,7 @@ struct dfa_base
         }
         else
         {
-          from->m_edge[character] = add_state(e_token_id::invalid);
+          from->m_edge[character] = add_state(token_id::invalid);
         }
 
         add_range(from->m_edge[character], default_state, accepted);
@@ -102,40 +105,196 @@ struct dfa_base
   }
 };
 
+  struct parsing_context
+  {
+    stream_context m_token_context;
+    int m_current_token = 0;
+    int m_previous_token = 0;
+
+  bool end_of_token_stream()
+  {
+    return m_current_token >= m_token_context.m_tokens.size();
+  }
+
+  const token& get_current_token()
+  {
+    return m_token_context.m_tokens[m_current_token];
+  }
+
+  const token& get_previous_token()
+  {
+    return m_token_context.m_tokens[m_previous_token];
+  }
+
+  void set_current_token_index(int new_index = 0)
+  {
+    m_current_token = std::min(static_cast<int>(m_token_context.m_tokens.size()) - 1, new_index);
+    m_previous_token = m_current_token;
+  }
+
+  void advance_token_stream(bool skip_whitespace_and_comments = true)
+  {
+    m_previous_token = m_current_token;
+    ++m_current_token;
+
+    if (skip_whitespace_and_comments && !end_of_token_stream())
+    {
+      while (m_token_context.m_tokens[m_current_token].m_id == token_id::new_line ||
+        m_token_context.m_tokens[m_current_token].m_id == token_id::whitespace ||
+        m_token_context.m_tokens[m_current_token].m_id == token_id::single_line_comment ||
+        m_token_context.m_tokens[m_current_token].m_id == token_id::multi_line_comment)
+      {
+        ++m_current_token;
+
+        if (end_of_token_stream())
+        {
+          break;
+        }
+      }
+    }
+  }
+
+  bool accept(const std::string& identifier, bool skip_whitespace_and_comments = true)
+  {
+    expect(!end_of_token_stream(), "Unexpected end of stream.");
+
+    if (std::string(m_token_context.m_tokens[m_current_token].m_stream, m_token_context.m_tokens[m_current_token].m_length) == identifier)
+    {
+      advance_token_stream(skip_whitespace_and_comments);
+      return true;
+    }
+
+    return false;
+  }
+
+  bool accept(token_id id, bool skip_whitespace_and_comments = true)
+  {
+    expect(!end_of_token_stream(), "Unexpected end of stream.");
+
+    if (m_token_context.m_tokens[m_current_token].m_id == id)
+    {
+      advance_token_stream(skip_whitespace_and_comments);
+      return true;
+    }
+
+    return false;
+  }
+
+  bool expect(token_id id, const std::string& error_message, bool skip_whitespace_and_comments = true)
+  {
+    return expect(accept(id, skip_whitespace_and_comments), error_message);
+  }
+
+  bool expect(bool expression, const std::string& error_message)
+  {
+    if (expression)
+    {
+      return true;
+    }
+
+    // TODO: Exception Handler Class
+    if (end_of_token_stream())
+    {
+      throw std::exception(error_message.c_str());
+      //throw CHeaderToolException(CurrentFilePath, CurrentLineNumber, InErrorMessage);
+    }
+    else
+    {
+      token& error_token = m_token_context.m_tokens[m_previous_token];
+      //throw CHeaderToolException(ErrorToken.FilePath, ErrorToken.LineNumber, InErrorMessage);
+      throw std::exception(error_message.c_str());
+    }
+  }
+
+  void remove_identifier_tokens(const std::vector<std::string>& identifiers)
+  {
+    for (int i = 0; i < m_token_context.m_tokens.size();)
+    {
+      bool found = false;
+
+      if (m_token_context.m_tokens[i].m_id == token_id::identifier)
+      {
+        std::string token_string = std::string(m_token_context.m_tokens[i].m_stream, m_token_context.m_tokens[i].m_length);
+
+        for (int j = 0; j < identifiers.size(); ++j)
+        {
+          if (token_string == identifiers[j])
+          {
+            remove_tokens(i, i + 1);
+            found = true;
+            break;
+          }
+        }
+      }
+
+      if (!found)
+      {
+        ++i;
+      }
+    }
+  }
+
+  void remove_tokens(int start_index, int end_index)
+  {
+    if (start_index >= end_index || start_index < 0 || end_index >= m_token_context.m_tokens.size())
+    {
+      return;
+    }
+
+    m_token_context.m_tokens.erase(m_token_context.m_tokens.begin() + start_index + 1, m_token_context.m_tokens.begin() + end_index);
+  }
+
+  void remove_tokens(token_id id)
+  {
+    std::vector<token> new_list;
+    new_list.reserve(m_token_context.m_tokens.size());
+    for (size_t i = 0; i < m_token_context.m_tokens.size(); ++i)
+    {
+      if (m_token_context.m_tokens[i].m_id != id)
+      {
+        new_list.push_back(m_token_context.m_tokens[i]);
+      }
+    }
+
+    m_token_context.m_tokens = new_list;
+  }
+
+};
+
 struct dfa_cpp : public dfa_base
 {
   dfa_cpp()
   {
-    root = add_state(e_token_id::invalid);
-    dfa_state_ptr white_space = add_state(e_token_id::whitespace);
-    dfa_state_ptr new_line = add_state(e_token_id::new_line);
-    dfa_state_ptr identifier = add_state(e_token_id::identifier);
-    dfa_state_ptr integer_literal = add_state(e_token_id::integer_literal);
-    dfa_state_ptr float_literal = add_state(e_token_id::float_literal);
-    dfa_state_ptr scientific_inv = add_state(e_token_id::invalid);
-    dfa_state_ptr plus_minus_inv = add_state(e_token_id::invalid);
-    dfa_state_ptr scientific_float = add_state(e_token_id::float_literal);
-    dfa_state_ptr optional_f = add_state(e_token_id::float_literal);
-    dfa_state_ptr string_back_slash = add_state(e_token_id::invalid);
-    dfa_state_ptr string_literal_inv = add_state(e_token_id::invalid);
-    dfa_state_ptr string_literal = add_state(e_token_id::string_literal);
+    root = add_state(token_id::invalid);
+    dfa_state_ptr white_space = add_state(token_id::whitespace);
+    dfa_state_ptr new_line = add_state(token_id::new_line);
+    dfa_state_ptr identifier = add_state(token_id::identifier);
+    dfa_state_ptr integer_literal = add_state(token_id::integer_literal);
+    dfa_state_ptr float_literal = add_state(token_id::float_literal);
+    dfa_state_ptr scientific_inv = add_state(token_id::invalid);
+    dfa_state_ptr plus_minus_inv = add_state(token_id::invalid);
+    dfa_state_ptr scientific_float = add_state(token_id::float_literal);
+    dfa_state_ptr optional_f = add_state(token_id::float_literal);
+    dfa_state_ptr string_back_slash = add_state(token_id::invalid);
+    dfa_state_ptr string_literal_inv = add_state(token_id::invalid);
+    dfa_state_ptr string_literal = add_state(token_id::string_literal);
 
-    dfa_state_ptr integer_literal_zero = add_state(e_token_id::integer_literal);
-    dfa_state_ptr hex_literal_inv = add_state(e_token_id::invalid);
-    dfa_state_ptr binary_literal_inv = add_state(e_token_id::invalid);
+    dfa_state_ptr integer_literal_zero = add_state(token_id::integer_literal);
+    dfa_state_ptr hex_literal_inv = add_state(token_id::invalid);
+    dfa_state_ptr binary_literal_inv = add_state(token_id::invalid);
 
-    dfa_state_ptr hex_literal = add_state(e_token_id::hex_literal);
-    dfa_state_ptr binary_literal = add_state(e_token_id::binary_literal);
+    dfa_state_ptr hex_literal = add_state(token_id::hex_literal);
+    dfa_state_ptr binary_literal = add_state(token_id::binary_literal);
 
-    dfa_state_ptr character_literal_inv = add_state(e_token_id::invalid);
-    dfa_state_ptr character_backslash = add_state(e_token_id::invalid);
-    dfa_state_ptr character_finish = add_state(e_token_id::invalid);
-    dfa_state_ptr character_literal = add_state(e_token_id::character_literal);
-    dfa_state_ptr single_line_comment_first_slash = add_state(e_token_id::invalid);
-    dfa_state_ptr single_line_comment = add_state(e_token_id::single_line_comment);
-    dfa_state_ptr multi_line_comment_inv = add_state(e_token_id::invalid);
-    dfa_state_ptr multi_line_comment_escape = add_state(e_token_id::invalid);
-    dfa_state_ptr multi_line_comment = add_state(e_token_id::multi_line_comment);
+    dfa_state_ptr character_literal_inv = add_state(token_id::invalid);
+    dfa_state_ptr character_backslash = add_state(token_id::invalid);
+    dfa_state_ptr character_finish = add_state(token_id::invalid);
+    dfa_state_ptr character_literal = add_state(token_id::character_literal);
+    dfa_state_ptr single_line_comment_first_slash = add_state(token_id::invalid);
+    dfa_state_ptr single_line_comment = add_state(token_id::single_line_comment);
+    dfa_state_ptr multi_line_comment_inv = add_state(token_id::invalid);
+    dfa_state_ptr multi_line_comment_escape = add_state(token_id::invalid);
+    dfa_state_ptr multi_line_comment = add_state(token_id::multi_line_comment);
 
     std::string lower_case = "abcdefghijklmnopqrstuvwxyz";
     std::string upper_case = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -144,12 +303,12 @@ struct dfa_cpp : public dfa_base
     std::string hex_characters = numbers + "abcdef" + "ABCDEF";
     std::string identifier_characters = letters + numbers + '_';
 
-#define TOKEN(text, name) add_string(root, nullptr, e_token_id::name, text, "");
+#define TOKEN(text, name) add_string(root, nullptr, token_id::name, text, "");
     // Add Symbols
 #include "defines/symbol.inl"
 #undef TOKEN
 
-#define TOKEN(text, name) add_string(root, identifier, e_token_id::name, text, identifier_characters);
+#define TOKEN(text, name) add_string(root, identifier, token_id::name, text, identifier_characters);
 #include "defines/keywords.inl"
 #include "defines/preprocessor_directives.inl"
 #undef TOKEN
@@ -236,110 +395,100 @@ struct dfa_cpp : public dfa_base
   }
 };
 
-class tokenize
+namespace internal
 {
-public:
+void read_token(const char* stream, const dfa_base& dfa, token& out_token)
+{
+  int i = 0;
+  dfa_state_ptr state = dfa.root;
+
+  while (state)
+  {
+    dfa_state_ptr next = state->m_edge[stream[i]];
+    int length = i;
+
+    if (!next || stream[i++] == '\0')
+    {
+      out_token.m_id = state->m_token_id;
+      out_token.m_stream = stream;
+      out_token.m_length = length;
+      return;
+    }
+
+    state = next;
+  }
+}
+
+void read_language_token(const char* stream, const dfa_base& dfa, stream_context& out_token_stream, token& out_token)
+{
+  read_token(stream, dfa, out_token);
+
+  if (out_token.m_id == token_id::float_literal && out_token.m_stream[out_token.m_length - 1] == '.')
+  {
+    out_token.m_id = token_id::integer_literal;
+    out_token.m_length -= 1;
+  }
+
+  out_token.m_line_number = out_token_stream.m_num_lines;
+
+  if (out_token.m_id == token_id::new_line)
+  {
+    ++out_token_stream.m_num_lines;
+  }
+  else if (out_token.m_id == token_id::multi_line_comment)
+  {
+    std::string comment(out_token.m_stream, out_token.m_length);
+    
+    for (char character : comment)
+    {
+      if (character == '\0')
+      {
+        ++out_token_stream.m_num_lines;
+      }
+    }
+  }
+}
+
+void tokenize_stream(const dfa_base& dfa, stream_context& out_token_stream)
+{
+  const char* stream = out_token_stream.m_stream.c_str();
+  while (*stream != '\0')
+  {
+    token language_token;
+    read_language_token(stream, dfa, out_token_stream, language_token);
+    language_token.m_file_path = out_token_stream.m_file_path.c_str();
+    stream += language_token.m_length;
+    if (language_token.m_length == 0)
+    {
+      ++stream;
+    }
+    else
+    {
+      out_token_stream.m_tokens.push_back(language_token);
+    }
+  }
+}
+
+}
  
+void from_string(const std::string& string, const dfa_base& dfa, stream_context& out_token_stream)
+{
+  out_token_stream.m_num_lines = 1;
+  out_token_stream.m_stream = string;
+  out_token_stream.m_tokens.clear();
+  internal::tokenize_stream(dfa, out_token_stream);
+}
 
-  static void string(const std::string& string, const dfa_base& dfa, token_stream_context& out_token_stream)
-  {
-    out_token_stream.m_num_lines = 1;
-
-    out_token_stream.m_stream = string;
-    out_token_stream.m_tokens.clear();
-
-    tokenize_stream(dfa, out_token_stream);
-  }
-
-  static void file(const std::filesystem::path& file_path, const dfa_base& dfa, token_stream_context& out_token_stream)
-  {
-    out_token_stream.m_num_lines = 1;
-
-    std::ifstream file;
-    file.open(file_path, std::ifstream::in);
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    out_token_stream.m_stream = buffer.str();
-    out_token_stream.m_file_path = file_path.string();
-    out_token_stream.m_tokens.clear();
-
-    tokenize_stream(dfa, out_token_stream);
-  }
-
-private:
-
-  static void tokenize_stream(const dfa_base& dfa, token_stream_context& out_token_stream)
-  {
-    const char* stream = out_token_stream.m_stream.c_str();
-
-    while (*stream != '\0')
-    {
-      token language_token;
-      read_language_token(stream, dfa, out_token_stream, language_token);
-      language_token.m_file_path = out_token_stream.m_file_path.c_str();
-
-      stream += language_token.m_length;
-
-      if (language_token.m_length == 0)
-      {
-        ++stream;
-      }
-      else
-      {
-        out_token_stream.m_tokens.push_back(language_token);
-      }
-    }
-  }
-
-  static void read_language_token(const char* stream, const dfa_base& dfa, token_stream_context& out_token_stream, token& out_token)
-  {
-    read_token(stream, dfa, out_token);
-
-    if (out_token.m_id == e_token_id::float_literal && out_token.m_stream[out_token.m_length - 1] == '.')
-    {
-      out_token.m_id = e_token_id::integer_literal;
-      out_token.m_length -= 1;
-    }
-
-    out_token.m_line_number = out_token_stream.m_num_lines;
-
-    if (out_token.m_id == e_token_id::new_line)
-    {
-      ++out_token_stream.m_num_lines;
-    }
-    else if (out_token.m_id == e_token_id::multi_line_comment)
-    {
-      std::string comment(out_token.m_stream, out_token.m_length);
-      
-      for (char character : comment)
-      {
-        if (character == '\0')
-        {
-          ++out_token_stream.m_num_lines;
-        }
-      }
-    }
-  }
-
-  static void read_token(const char* stream, const dfa_base& dfa, token& out_token)
-  {
-    int i = 0;
-    dfa_state_ptr state = dfa.root;
-
-    while (state)
-    {
-      dfa_state_ptr next = state->m_edge[stream[i]];
-      int length = i;
-
-      if (!next || stream[i++] == '\0')
-      {
-        out_token.m_id = state->m_token_id;
-        out_token.m_stream = stream;
-        out_token.m_length = length;
-        return;
-      }
-
-      state = next;
-    }
-  }
-};
+void from_file(const std::filesystem::path& file_path, const dfa_base& dfa, stream_context& out_token_stream)
+{
+  out_token_stream.m_num_lines = 1;
+  std::ifstream file;
+  file.open(file_path, std::ifstream::in);
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  out_token_stream.m_stream = buffer.str();
+  out_token_stream.m_file_path = file_path.string();
+  out_token_stream.m_tokens.clear();
+  internal::tokenize_stream(dfa, out_token_stream);
+}
+}

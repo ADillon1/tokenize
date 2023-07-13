@@ -3,6 +3,9 @@
 #include <string>
 #include <unordered_map>
 
+namespace tokenize
+{
+
 #undef TOKEN
 #define TOKEN(text, name) text,
 
@@ -14,15 +17,15 @@ static std::string token_text[] =
 #undef TOKEN
 #define TOKEN(text, name) name,
 
-enum class e_token_id
+enum class token_id
 {
 #include <tokenize/defines/tokens.inl>
 };
 
 #undef TOKEN
-#define TOKEN(text, name) std::pair<std::string, e_token_id>( text, e_token_id::name),
+#define TOKEN(text, name) std::pair<std::string, token_id>( text, token_id::name),
 
-static std::unordered_map<std::string, e_token_id> keyword_map =
+static std::unordered_map<std::string, token_id> keyword_map =
 {
 #include <tokenize/defines/tokens.inl>
 };
@@ -31,7 +34,7 @@ static std::unordered_map<std::string, e_token_id> keyword_map =
 
 struct token
 {
-  e_token_id m_id;
+  token_id m_id;
   const char* m_stream;
   size_t m_length;
 
@@ -41,3 +44,5 @@ struct token
   const char* comment_stream;
   size_t comment_length;
 };
+
+}
