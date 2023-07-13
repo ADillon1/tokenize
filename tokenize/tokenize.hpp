@@ -8,10 +8,31 @@
 #include <filesystem>
 #include <memory>
 #include <algorithm>
+#include <exception>
 #include <tokenize/defines/tokenizer_types.hpp>
 
 namespace tokenize
 {
+struct token_exception : public std::exception
+{
+  std::string m_error_message;
+
+  token_exception(const std::string& error_message)
+    : m_error_message(error_message)
+  {
+  }
+
+  token_exception(const std::string& file_path, size_t line_number, const std::string& error_message)
+    : m_error_message(file_path.empty() ? error_message : file_path + "(" + std::to_string(line_number) + "): " + error_message)
+  {
+  }
+
+  virtual const char* what() throw()
+  {
+    return m_error_message.c_str();
+  }
+};
+
 struct stream_context
 {
   std::string m_file_path;
@@ -195,14 +216,20 @@ struct dfa_base
     // TODO: Exception Handler Class
     if (end_of_token_stream())
     {
-      throw std::exception(error_message.c_str());
-      //throw CHeaderToolException(CurrentFilePath, CurrentLineNumber, InErrorMessage);
+      if (m_previous_token >= 0 && m_previous_token < m_token_context.m_tokens.size())
+      {
+        token& previous_token = m_token_context.m_tokens[m_previous_token];
+        throw token_exception(previous_token.m_file_path, previous_token.m_line_number, error_message);
+      }
+      else
+      {
+        throw token_exception(error_message);
+      }
     }
     else
     {
       token& error_token = m_token_context.m_tokens[m_previous_token];
-      //throw CHeaderToolException(ErrorToken.FilePath, ErrorToken.LineNumber, InErrorMessage);
-      throw std::exception(error_message.c_str());
+      throw token_exception(error_token.m_file_path, error_token.m_line_number, error_message);
     }
   }
 
