@@ -27,7 +27,7 @@ struct token_exception : public std::exception
   {
   }
 
-  virtual const char* what() throw()
+  virtual const char* what() const
   {
     return m_error_message.c_str();
   }
