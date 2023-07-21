@@ -268,7 +268,7 @@ struct dfa_base
       return;
     }
 
-    m_token_context.m_tokens.erase(m_token_context.m_tokens.begin() + start_index + 1, m_token_context.m_tokens.begin() + end_index);
+    m_token_context.m_tokens.erase(m_token_context.m_tokens.begin() + start_index, m_token_context.m_tokens.begin() + end_index);
   }
 
   void remove_tokens(token_id id)
