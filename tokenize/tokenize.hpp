@@ -424,7 +424,7 @@ struct dfa_cpp : public dfa_base
 
 namespace internal
 {
-void read_token(const char* stream, const dfa_base& dfa, token& out_token)
+static void read_token(const char* stream, const dfa_base& dfa, token& out_token)
 {
   int i = 0;
   dfa_state_ptr state = dfa.root;
@@ -446,7 +446,7 @@ void read_token(const char* stream, const dfa_base& dfa, token& out_token)
   }
 }
 
-void read_language_token(const char* stream, const dfa_base& dfa, stream_context& out_token_stream, token& out_token)
+static void read_language_token(const char* stream, const dfa_base& dfa, stream_context& out_token_stream, token& out_token)
 {
   read_token(stream, dfa, out_token);
 
@@ -476,7 +476,7 @@ void read_language_token(const char* stream, const dfa_base& dfa, stream_context
   }
 }
 
-void tokenize_stream(const dfa_base& dfa, stream_context& out_token_stream)
+static void tokenize_stream(const dfa_base& dfa, stream_context& out_token_stream)
 {
   const char* stream = out_token_stream.m_stream.c_str();
   while (*stream != '\0')
@@ -498,7 +498,7 @@ void tokenize_stream(const dfa_base& dfa, stream_context& out_token_stream)
 
 }
  
-void from_string(const std::string& string, const dfa_base& dfa, stream_context& out_token_stream)
+static void from_string(const std::string& string, const dfa_base& dfa, stream_context& out_token_stream)
 {
   out_token_stream.m_num_lines = 1;
   out_token_stream.m_stream = string;
@@ -506,7 +506,7 @@ void from_string(const std::string& string, const dfa_base& dfa, stream_context&
   internal::tokenize_stream(dfa, out_token_stream);
 }
 
-void from_file(const std::filesystem::path& file_path, const dfa_base& dfa, stream_context& out_token_stream)
+static void from_file(const std::filesystem::path& file_path, const dfa_base& dfa, stream_context& out_token_stream)
 {
   out_token_stream.m_num_lines = 1;
   std::ifstream file;
