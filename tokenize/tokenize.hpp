@@ -269,6 +269,7 @@ struct dfa_base
     }
 
     m_token_context.m_tokens.erase(m_token_context.m_tokens.begin() + start_index, m_token_context.m_tokens.begin() + end_index);
+    m_current_token -= (end_index - start_index);
   }
 
   void remove_tokens(token_id id)
