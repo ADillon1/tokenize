@@ -263,7 +263,7 @@ struct dfa_base
 
   void remove_tokens(int start_index, int end_index)
   {
-    if (start_index >= end_index || start_index < 0 || end_index >= m_token_context.m_tokens.size())
+    if (start_index >= end_index || start_index < 0 || end_index > m_token_context.m_tokens.size())
     {
       return;
     }
