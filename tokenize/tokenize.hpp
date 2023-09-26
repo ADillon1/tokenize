@@ -27,7 +27,7 @@ struct token_exception : public std::exception
   {
   }
 
-  virtual const char* what() const
+  virtual const char* what() const noexcept override
   {
     return m_error_message.c_str();
   }
